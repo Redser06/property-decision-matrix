@@ -278,6 +278,10 @@ export function parsePropertyUrls(
   return created;
 }
 
+export function getEffectivePurchasePrice(property: PropertyCandidate): number {
+  return property.agreedPrice && property.agreedPrice > 0 ? property.agreedPrice : property.askingPrice;
+}
+
 function clamp(val: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, val));
 }
@@ -372,14 +376,15 @@ export function evaluatePortfolio(
   market: MarketMode
 ): PortfolioEvaluation {
   const evaluatedRaw: EvaluatedProperty[] = properties.map((property) => {
-    const stampDuty = calculateStampDuty(property.askingPrice, market);
+    const effectivePrice = getEffectivePurchasePrice(property);
+    const stampDuty = calculateStampDuty(effectivePrice, market);
     const totalWorksAndUpgrades =
       property.requiredWorksCost + property.heatingUpgradeCost + property.legalSurveyCost + property.contingencyCost;
-    const totalLandedCost = property.askingPrice + stampDuty + totalWorksAndUpgrades;
-    const purchaseCeilingDelta = property.askingPrice - budget.targetPurchaseMax;
+    const totalLandedCost = effectivePrice + stampDuty + totalWorksAndUpgrades;
+    const purchaseCeilingDelta = effectivePrice - budget.targetPurchaseMax;
     const landedBuffer = budget.totalLandedCostCeiling - totalLandedCost;
-    const pricePerSqft = Math.round(property.askingPrice / Math.max(1, property.sqft));
-    const pricePerSqm = Math.round(property.askingPrice / Math.max(1, property.sqm));
+    const pricePerSqft = Math.round(effectivePrice / Math.max(1, property.sqft));
+    const pricePerSqm = Math.round(effectivePrice / Math.max(1, property.sqm));
 
     const ruleChecks = evaluateRuleChecks(property, totalLandedCost, budget, weights, household, market);
     const failedStrictRules = ruleChecks.filter((r) => r.strict && r.status === 'FAIL');
@@ -388,7 +393,7 @@ export function evaluatePortfolio(
     // 1. Prudence Score (Head: budget margin, low remediation risk, £/sqft efficiency, energy efficiency)
     const bufferRatio = landedBuffer / Math.max(1, budget.totalLandedCostCeiling);
     const bufferPoints = clamp(70 + bufferRatio * 280, 15, 99);
-    const worksRatio = (property.requiredWorksCost + property.heatingUpgradeCost) / Math.max(1, property.askingPrice);
+    const worksRatio = (property.requiredWorksCost + property.heatingUpgradeCost) / Math.max(1, effectivePrice);
     const worksPenalty = weights.compromises.cosmeticRenovationOk && property.renovationIsCosmeticOnly
       ? worksRatio * 95
       : worksRatio * 185;
@@ -418,7 +423,13 @@ export function evaluatePortfolio(
     const wQuiet = weights.priorityWeights.acousticQuiet;
     const wWalk = weights.priorityWeights.microWalkability;
     const wArch = weights.priorityWeights.architecturalChar;
-    const totalLifestyleW = wSolar + wQuiet + wWalk + wArch + 4; // +4 for catchment & commute core
+    const customFactors = weights.customPriorityFactors ?? [];
+    const customWeightedSum = customFactors.reduce((acc, factor) => {
+      const rating = clamp(property.customFactorScores?.[factor.id] ?? 7, 1, 10);
+      return acc + rating * 10 * factor.weight;
+    }, 0);
+    const customWeightTotal = customFactors.reduce((acc, factor) => acc + factor.weight, 0);
+    const totalLifestyleW = wSolar + wQuiet + wWalk + wArch + 4 + customWeightTotal; // +4 for catchment & commute core
 
     const lifestyleScore = clamp(
       (solarPoints * wSolar +
@@ -426,7 +437,8 @@ export function evaluatePortfolio(
         walkPoints * wWalk +
         archPoints * wArch +
         catchmentPoints * 2.5 +
-        commuteBonus * 1.5) /
+        commuteBonus * 1.5 +
+        customWeightedSum) /
         totalLifestyleW,
       25,
       98

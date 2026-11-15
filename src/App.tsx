@@ -387,6 +387,44 @@ export function App(): React.ReactElement {
     showToast(`Added strict non-negotiable gate: ${title}`);
   };
 
+  const handleAddPriorityFactor = (title: string, subtitle: string) => {
+    const newId = `factor-custom-${Date.now()}`;
+    updateCurrentWorkspace((prev) => ({
+      ...prev,
+      weights: {
+        ...prev.weights,
+        customPriorityFactors: [
+          ...(prev.weights.customPriorityFactors ?? []),
+          { id: newId, title, subtitle: subtitle || 'Custom weighted lifestyle priority', weight: 3 },
+        ],
+      },
+    }));
+    showToast(`Added weighted lifestyle factor: ${title}`);
+  };
+
+  const handleUpdatePriorityFactorWeight = (factorId: string, weight: number) => {
+    updateCurrentWorkspace((prev) => ({
+      ...prev,
+      weights: {
+        ...prev.weights,
+        customPriorityFactors: (prev.weights.customPriorityFactors ?? []).map((f) =>
+          f.id === factorId ? { ...f, weight } : f
+        ),
+      },
+    }));
+  };
+
+  const handleRemovePriorityFactor = (factorId: string) => {
+    updateCurrentWorkspace((prev) => ({
+      ...prev,
+      weights: {
+        ...prev.weights,
+        customPriorityFactors: (prev.weights.customPriorityFactors ?? []).filter((f) => f.id !== factorId),
+      },
+    }));
+    showToast('Removed custom lifestyle factor.');
+  };
+
   const handleResetDefaults = () => {
     updateCurrentWorkspace(() => buildWorkspaceFromPreset(market));
     showToast(`Reset ${presetMeta.shortLabel} calibration & shortlist to neutral defaults.`);
@@ -470,6 +508,7 @@ export function App(): React.ReactElement {
             household={workspace.household}
             onIngestUrls={handleIngestUrls}
             onRemoveProperty={handleRemoveProperty}
+            onUpdateProperty={handleUpdateProperty}
             onClearAllProperties={handleClearAllProperties}
             onResetDefaults={handleResetDefaults}
             onUpdateBudget={handleUpdateBudget}
@@ -514,6 +553,9 @@ export function App(): React.ReactElement {
             onToggleRuleEnabled={handleToggleRuleEnabled}
             onToggleRuleStrict={handleToggleRuleStrict}
             onAddNonNegotiable={handleAddNonNegotiable}
+            onAddPriorityFactor={handleAddPriorityFactor}
+            onUpdatePriorityFactorWeight={handleUpdatePriorityFactorWeight}
+            onRemovePriorityFactor={handleRemovePriorityFactor}
             onResetDefaults={handleResetDefaults}
             onProceed={() => handleSelectStep(3)}
           />
@@ -562,6 +604,7 @@ export function App(): React.ReactElement {
           market={market}
           household={workspace.household}
           nonNegotiables={workspace.weights.nonNegotiables}
+          customPriorityFactors={workspace.weights.customPriorityFactors ?? []}
           existingAudit={decisionAudits[inspectedEval.property.id] ?? null}
           onAuditComplete={(propertyId, audit) => {
             setDecisionAudits((prev) => ({ ...prev, [propertyId]: audit }));

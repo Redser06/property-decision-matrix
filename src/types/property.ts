@@ -22,6 +22,8 @@ export interface PropertyCandidate {
   imageUrl: string;
   ingestionSource?: 'preset' | 'live_html' | 'search_grounded' | 'url_fallback';
   askingPrice: number;
+  agreedPrice?: number;
+  customFactorScores?: Record<string, number>;
   bedrooms: number;
   bathrooms: number;
   sqft: number;
@@ -117,10 +119,18 @@ export interface CompromisesConfig {
   longerCommuteForNatureOk: boolean;
 }
 
+export interface CustomPriorityFactor {
+  id: string;
+  title: string;
+  subtitle: string;
+  weight: number; // 1..5
+}
+
 export interface DecisionWeights {
   headPercent: number; // 0..100
   nonNegotiables: NonNegotiableRule[];
   priorityWeights: PriorityWeights;
+  customPriorityFactors?: CustomPriorityFactor[];
   compromises: CompromisesConfig;
 }
 

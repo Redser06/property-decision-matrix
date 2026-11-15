@@ -8,7 +8,7 @@ import type {
   PortfolioEvaluation,
   PropertyCandidate,
 } from '../types/property.ts';
-import { formatCurrency } from '../engine/decisionEngine.ts';
+import { formatCurrency, getEffectivePurchasePrice } from '../engine/decisionEngine.ts';
 import { PropertyMapPanel } from '../components/PropertyMapPanel.tsx';
 import { PropertyPhoto } from '../components/PropertyPhoto.tsx';
 
@@ -255,10 +255,10 @@ export const Step3ComparisonView: React.FC<Step3ComparisonViewProps> = ({
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-slate-50 rounded p-2.5 border border-slate-100">
                       <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
-                        Asking Price
+                        {property.agreedPrice ? 'Sale Agreed Price' : 'Asking Price'}
                       </div>
                       <div className="text-base font-mono font-semibold text-slate-900 tabular-nums mt-0.5">
-                        {formatCurrency(property.askingPrice, market)}
+                        {formatCurrency(getEffectivePurchasePrice(property), market)}
                       </div>
                       <div className="text-[11px] font-mono text-slate-500 mt-0.5 tabular-nums">
                         {isIE
@@ -690,10 +690,15 @@ export const Step3ComparisonView: React.FC<Step3ComparisonViewProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm tabular-nums">
               <tr>
-                <td className="py-3 px-5 font-medium text-slate-700">1. Asking / Guide Price</td>
+                <td className="py-3 px-5 font-medium text-slate-700">1. Asking / Agreed Price</td>
                 {displayedList.map((item) => (
                   <td key={item.property.id} className="py-3 px-5 border-l border-slate-200 font-mono">
-                    {formatCurrency(item.property.askingPrice, market)}
+                    {formatCurrency(getEffectivePurchasePrice(item.property), market)}
+                    {item.property.agreedPrice && (
+                      <span className="ml-1.5 text-[10px] font-sans text-blue-700 font-semibold">
+                        (Agreed)
+                      </span>
+                    )}
                   </td>
                 ))}
               </tr>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type {
+  CustomPriorityFactor,
   EvaluatedProperty,
   HouseholdProfile,
   MarketMode,
@@ -7,7 +8,7 @@ import type {
   PortfolioEvaluation,
   PropertyCandidate,
 } from '../types/property.ts';
-import { formatCurrency } from '../engine/decisionEngine.ts';
+import { formatCurrency, getEffectivePurchasePrice } from '../engine/decisionEngine.ts';
 import {
   runGeminiDecisionAudit,
   type DecisionAttachment,
@@ -19,6 +20,7 @@ interface PropertyModalProps {
   market: MarketMode;
   household: HouseholdProfile;
   nonNegotiables: NonNegotiableRule[];
+  customPriorityFactors?: CustomPriorityFactor[];
   existingAudit?: GeminiDecisionAuditResult | null;
   onAuditComplete?: (propertyId: string, audit: GeminiDecisionAuditResult) => void;
   onClose: () => void;
@@ -30,6 +32,7 @@ export const PropertyAuditModal: React.FC<PropertyModalProps> = ({
   market,
   household,
   nonNegotiables,
+  customPriorityFactors = [],
   existingAudit = null,
   onAuditComplete,
   onClose,
@@ -37,6 +40,12 @@ export const PropertyAuditModal: React.FC<PropertyModalProps> = ({
 }) => {
   const { property } = evaluated;
   const [askingPrice, setAskingPrice] = useState(property.askingPrice);
+  const [agreedPriceInput, setAgreedPriceInput] = useState(
+    property.agreedPrice !== undefined ? String(property.agreedPrice) : ''
+  );
+  const [customFactorScores, setCustomFactorScores] = useState<Record<string, number>>(
+    property.customFactorScores ?? {}
+  );
   const [requiredWorksCost, setRequiredWorksCost] = useState(property.requiredWorksCost);
   const [heatingUpgradeCost, setHeatingUpgradeCost] = useState(property.heatingUpgradeCost);
   const [commuteMinutes, setCommuteMinutes] = useState(property.commuteMinutes);
@@ -99,8 +108,11 @@ export const PropertyAuditModal: React.FC<PropertyModalProps> = ({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    const parsedAgreed = agreedPriceInput.trim() === '' ? undefined : Number(agreedPriceInput);
     onUpdateProperty(property.id, {
       askingPrice: Math.max(100000, Number(askingPrice) || property.askingPrice),
+      agreedPrice: parsedAgreed !== undefined && !Number.isNaN(parsedAgreed) && parsedAgreed > 0 ? parsedAgreed : undefined,
+      customFactorScores,
       requiredWorksCost: Math.max(0, Number(requiredWorksCost) || 0),
       heatingUpgradeCost: Math.max(0, Number(heatingUpgradeCost) || 0),
       commuteMinutes: Math.max(1, Number(commuteMinutes) || property.commuteMinutes),
@@ -174,13 +186,27 @@ export const PropertyAuditModal: React.FC<PropertyModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <label className="block">
                 <span className="text-xs font-semibold text-slate-700 block mb-1">
-                  Asking / Offer Price ({market === 'IE' ? '€' : '£'})
+                  Asking Price ({market === 'IE' ? '€' : '£'})
                 </span>
                 <input
                   type="number"
                   step={5000}
                   value={askingPrice}
                   onChange={(e) => setAskingPrice(Number(e.target.value))}
+                  className="w-full rounded border border-slate-300 px-3 py-2 text-sm font-mono"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-semibold text-slate-700 block mb-1">
+                  Sale Agreed / Bid Price ({market === 'IE' ? '€' : '£'})
+                </span>
+                <input
+                  type="number"
+                  step={5000}
+                  placeholder={`Optional (defaults to ${askingPrice})`}
+                  value={agreedPriceInput}
+                  onChange={(e) => setAgreedPriceInput(e.target.value)}
                   className="w-full rounded border border-slate-300 px-3 py-2 text-sm font-mono"
                 />
               </label>
@@ -239,6 +265,41 @@ export const PropertyAuditModal: React.FC<PropertyModalProps> = ({
                 />
               </label>
             </div>
+
+            {customPriorityFactors.length > 0 && (
+              <div className="pt-3 border-t border-slate-200 space-y-3">
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Custom Lifestyle Factor Fit (1–10)
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {customPriorityFactors.map((factor) => {
+                    const score = customFactorScores[factor.id] ?? 7;
+                    return (
+                      <label key={factor.id} className="block rounded border border-slate-200 bg-slate-50 p-2.5">
+                        <div className="flex items-center justify-between text-xs font-semibold text-slate-800 mb-1">
+                          <span>{factor.title}</span>
+                          <span className="font-mono text-slate-900">{score}/10</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={1}
+                          max={10}
+                          step={1}
+                          value={score}
+                          onChange={(e) =>
+                            setCustomFactorScores((prev) => ({
+                              ...prev,
+                              [factor.id]: Number(e.target.value),
+                            }))
+                          }
+                          className="w-full nv-range"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Gemini Decision-1 Multimodal Audit */}
@@ -601,7 +662,8 @@ export const ExportToolkitModal: React.FC<ExportModalProps> = ({
   const { winner } = evaluation;
   if (!winner) return null;
   const currency = market === 'IE' ? '€' : '£';
-  const suggestedBid = Math.round(winner.property.askingPrice * 0.982 / 5000) * 5000;
+  const effectiveWinnerPrice = getEffectivePurchasePrice(winner.property);
+  const suggestedBid = Math.round(effectiveWinnerPrice * 0.982 / 5000) * 5000;
 
   const memorandumText = `# NestVerdict Executive Decision Memorandum
 Client Household: ${clientNames}
@@ -610,7 +672,7 @@ Source Portal: ${winner.property.sourcePortal} (${winner.property.sourceUrl})
 Composite Decision Index: ${winner.compositeScore.toFixed(1)} / 100 (Confidence Coefficient: ${evaluation.confidenceCoefficient})
 
 FINANCIAL & LANDED CAPITAL SUMMARY
-- Asking Price: ${formatCurrency(winner.property.askingPrice, market)}
+- ${winner.property.agreedPrice ? 'Sale Agreed Price' : 'Asking Price'}: ${formatCurrency(effectiveWinnerPrice, market)}
 - Stamp Duty: ${formatCurrency(winner.stampDuty, market)}
 - Estimated Works + Energy Upgrade: ${formatCurrency(winner.property.requiredWorksCost + winner.property.heatingUpgradeCost, market)}
 - Legal, Survey & Contingency: ${formatCurrency(winner.property.legalSurveyCost + winner.property.contingencyCost, market)}
@@ -649,7 +711,7 @@ ${clientNames}`;
       return [
         `"${e.property.name}"`,
         e.property.sourcePortal,
-        e.property.askingPrice,
+        getEffectivePurchasePrice(e.property),
         e.stampDuty,
         works,
         e.totalLandedCost,
@@ -764,7 +826,7 @@ ${clientNames}`;
                       const works = e.property.requiredWorksCost + e.property.heatingUpgradeCost;
                       const extraWorks = Math.round((works * worksOverrunPct) / 100);
                       const stressedBuffer = e.landedBuffer - extraWorks;
-                      const monthlyRateHit = Math.round((e.property.askingPrice * 0.8 * (rateShockPct / 100)) / 12);
+                      const monthlyRateHit = Math.round((getEffectivePurchasePrice(e.property) * 0.8 * (rateShockPct / 100)) / 12);
                       return (
                         <tr key={e.property.id}>
                           <td className="py-2 pr-3 font-sans font-semibold text-slate-900">{e.property.name}</td>

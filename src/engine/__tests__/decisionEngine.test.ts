@@ -182,3 +182,40 @@ test('evaluatePortfolio returns empty evaluation when shortlist is empty', () =>
   assert.equal(empty.qualifiedCount, 0);
   assert.deepEqual(empty.comparisons, []);
 });
+
+test('agreedPrice overrides askingPrice for stamp duty, landed cost, and ceiling delta', () => {
+  const baseProp = { ...IRISH_PRESET.properties[0], askingPrice: 1_150_000 };
+  const agreedProp = { ...baseProp, agreedPrice: 1_165_000 };
+
+  const baseEval = evaluatePortfolio([baseProp], IRISH_PRESET.budget, IRISH_PRESET.weights, IRISH_PRESET.household, 'IE');
+  const agreedEval = evaluatePortfolio([agreedProp], IRISH_PRESET.budget, IRISH_PRESET.weights, IRISH_PRESET.household, 'IE');
+
+  const expectedStampDelta = calculateStampDuty(1_165_000, 'IE') - calculateStampDuty(1_150_000, 'IE');
+  assert.equal(agreedEval.evaluated[0].stampDuty - baseEval.evaluated[0].stampDuty, expectedStampDelta);
+  assert.equal(
+    agreedEval.evaluated[0].totalLandedCost - baseEval.evaluated[0].totalLandedCost,
+    15_000 + expectedStampDelta
+  );
+  assert.equal(
+    agreedEval.evaluated[0].purchaseCeilingDelta - baseEval.evaluated[0].purchaseCeilingDelta,
+    15_000
+  );
+});
+
+test('customPriorityFactors and customFactorScores shift lifestyleScore deterministically', () => {
+  const factorId = 'factor-sea-swim';
+  const weightsWithCustom = {
+    ...IRISH_PRESET.weights,
+    customPriorityFactors: [
+      { id: factorId, title: 'Sea swimming distance', subtitle: 'Under 10 min walk', weight: 5 },
+    ],
+  };
+  const lowFit = { ...IRISH_PRESET.properties[0], customFactorScores: { [factorId]: 2 } };
+  const highFit = { ...IRISH_PRESET.properties[0], customFactorScores: { [factorId]: 10 } };
+
+  const lowEval = evaluatePortfolio([lowFit], IRISH_PRESET.budget, weightsWithCustom, IRISH_PRESET.household, 'IE');
+  const highEval = evaluatePortfolio([highFit], IRISH_PRESET.budget, weightsWithCustom, IRISH_PRESET.household, 'IE');
+
+  assert.ok(highEval.evaluated[0].lifestyleScore > lowEval.evaluated[0].lifestyleScore);
+  assert.ok(highEval.evaluated[0].compositeScore > lowEval.evaluated[0].compositeScore);
+});

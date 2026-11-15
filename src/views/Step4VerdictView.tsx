@@ -8,7 +8,7 @@ import type {
   MarketMode,
   PortfolioEvaluation,
 } from '../types/property.ts';
-import { formatCurrency } from '../engine/decisionEngine.ts';
+import { formatCurrency, getEffectivePurchasePrice } from '../engine/decisionEngine.ts';
 
 interface Step4VerdictViewProps {
   market: MarketMode;
@@ -344,9 +344,9 @@ export const Step4VerdictView: React.FC<Step4VerdictViewProps> = ({
                         {item.property.code} · {item.property.name}
                       </h3>
                       <div className="text-xs text-slate-500">
-                        {item.property.area} · Asking{' '}
+                        {item.property.area} · {item.property.agreedPrice ? 'Agreed' : 'Asking'}{' '}
                         <span className="font-mono text-slate-700">
-                          {formatCurrency(item.property.askingPrice, market)}
+                          {formatCurrency(getEffectivePurchasePrice(item.property), market)}
                         </span>
                       </div>
                     </div>

@@ -7,7 +7,7 @@ import type {
   PortfolioEvaluation,
   PriorityWeights,
 } from '../types/property.ts';
-import { formatCurrency } from '../engine/decisionEngine.ts';
+import { formatCurrency, getEffectivePurchasePrice } from '../engine/decisionEngine.ts';
 
 interface Step2CalibrationViewProps {
   market: MarketMode;
@@ -19,6 +19,9 @@ interface Step2CalibrationViewProps {
   onToggleRuleEnabled: (ruleId: string) => void;
   onToggleRuleStrict: (ruleId: string) => void;
   onAddNonNegotiable: (title: string, subtitle: string) => void;
+  onAddPriorityFactor: (title: string, subtitle: string) => void;
+  onUpdatePriorityFactorWeight: (factorId: string, weight: number) => void;
+  onRemovePriorityFactor: (factorId: string) => void;
   onResetDefaults: () => void;
   onProceed: () => void;
 }
@@ -78,11 +81,17 @@ export const Step2CalibrationView: React.FC<Step2CalibrationViewProps> = ({
   onToggleRuleEnabled,
   onToggleRuleStrict,
   onAddNonNegotiable,
+  onAddPriorityFactor,
+  onUpdatePriorityFactorWeight,
+  onRemovePriorityFactor,
   onResetDefaults,
   onProceed,
 }) => {
   const [newRuleTitle, setNewRuleTitle] = useState('');
   const [showAddRule, setShowAddRule] = useState(false);
+  const [showAddFactor, setShowAddFactor] = useState(false);
+  const [newFactorTitle, setNewFactorTitle] = useState('');
+  const [newFactorSubtitle, setNewFactorSubtitle] = useState('');
 
   const head = weights.headPercent;
   const heart = 100 - head;
@@ -102,6 +111,18 @@ export const Step2CalibrationView: React.FC<Step2CalibrationViewProps> = ({
     onAddNonNegotiable(newRuleTitle.trim(), 'Custom household dealbreaker enforced during verdict gate');
     setNewRuleTitle('');
     setShowAddRule(false);
+  };
+
+  const handleAddFactor = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newFactorTitle.trim()) return;
+    onAddPriorityFactor(
+      newFactorTitle.trim(),
+      newFactorSubtitle.trim() || 'Custom weighted lifestyle priority (score properties in Inspect modal)'
+    );
+    setNewFactorTitle('');
+    setNewFactorSubtitle('');
+    setShowAddFactor(false);
   };
 
   return (
@@ -341,10 +362,46 @@ export const Step2CalibrationView: React.FC<Step2CalibrationViewProps> = ({
                   Dynamic variable multipliers applied to normalized attribute deltas across candidate properties.
                 </p>
               </div>
-              <span className="text-[11px] font-semibold text-slate-500">
-                Scale: 1x (Low) → 5x (Decisive)
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddFactor((v) => !v)}
+                  className="px-2.5 py-1 rounded border border-slate-200 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  + Add Factor
+                </button>
+                <span className="text-[11px] font-semibold text-slate-500">
+                  Scale: 1x (Low) → 5x (Decisive)
+                </span>
+              </div>
             </div>
+
+            {showAddFactor && (
+              <form onSubmit={handleAddFactor} className="mb-5 p-3 rounded border border-slate-200 bg-slate-50 space-y-2">
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    value={newFactorTitle}
+                    onChange={(e) => setNewFactorTitle(e.target.value)}
+                    placeholder="e.g., Proximity to grandparents / sea swimming"
+                    className="flex-1 rounded border border-slate-300 bg-white px-3 py-1.5 text-xs"
+                  />
+                  <input
+                    type="text"
+                    value={newFactorSubtitle}
+                    onChange={(e) => setNewFactorSubtitle(e.target.value)}
+                    placeholder="Optional description (e.g., Under 15 min drive)"
+                    className="flex-1 rounded border border-slate-300 bg-white px-3 py-1.5 text-xs"
+                  />
+                  <button
+                    type="submit"
+                    className="px-3 py-1.5 bg-slate-900 text-white rounded text-xs font-semibold shrink-0"
+                  >
+                    Add Factor
+                  </button>
+                </div>
+              </form>
+            )}
 
             <div className="space-y-5">
               {PRIORITY_ITEMS.map((item) => {
@@ -387,6 +444,60 @@ export const Step2CalibrationView: React.FC<Step2CalibrationViewProps> = ({
                             },
                           })
                         }
+                        className="w-full nv-range"
+                      />
+                      <span className="text-[11px] font-bold text-slate-900 w-6 text-right">5x</span>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {(weights.customPriorityFactors ?? []).map((factor) => {
+                const badge = weightBadge(factor.weight);
+                return (
+                  <div
+                    key={factor.id}
+                    className="p-4 border border-blue-200 rounded hover:border-blue-300 transition-colors bg-blue-50/30"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-sm font-semibold text-slate-900">{factor.title}</h4>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${badge.cls}`}>
+                            {badge.label}
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 text-[10px] font-semibold uppercase">
+                            Custom
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-0.5">{factor.subtitle}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-sm font-bold text-slate-900 font-mono">
+                          {factor.weight}.0x Multiplier
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onRemovePriorityFactor(factor.id)}
+                          className="w-6 h-6 rounded border border-slate-200 bg-white text-slate-500 hover:text-rose-700 flex items-center justify-center"
+                          title={`Remove ${factor.title}`}
+                          aria-label={`Remove ${factor.title}`}
+                        >
+                          <span className="material-symbols-outlined text-[14px]">close</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4 mt-3">
+                      <span className="text-[11px] font-semibold text-slate-500 w-6">1x</span>
+                      <input
+                        aria-label={factor.title}
+                        type="range"
+                        min={1}
+                        max={5}
+                        step={1}
+                        value={factor.weight}
+                        onChange={(e) => onUpdatePriorityFactorWeight(factor.id, Number(e.target.value))}
                         className="w-full nv-range"
                       />
                       <span className="text-[11px] font-bold text-slate-900 w-6 text-right">5x</span>
@@ -551,7 +662,8 @@ export const Step2CalibrationView: React.FC<Step2CalibrationViewProps> = ({
                           <h4 className="text-sm font-bold text-slate-900">{item.property.name}</h4>
                         </div>
                         <p className="text-xs text-slate-600 mt-0.5">
-                          {item.property.area} • {formatCurrency(item.property.askingPrice, market)}
+                          {item.property.area} • {formatCurrency(getEffectivePurchasePrice(item.property), market)}
+                          {item.property.agreedPrice ? ' (Agreed)' : ''}
                         </p>
                       </div>
                       <div className="text-right shrink-0">

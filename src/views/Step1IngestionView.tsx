@@ -23,6 +23,7 @@ interface Step1IngestionViewProps {
     replaceExisting?: boolean
   ) => Promise<{ added: number; message: string }>;
   onRemoveProperty: (id: string) => void;
+  onUpdateProperty: (id: string, patch: Partial<PropertyCandidate>) => void;
   onClearAllProperties: () => void;
   onResetDefaults: () => void;
   onUpdateBudget: (patch: Partial<BudgetConfig>) => void;
@@ -42,6 +43,7 @@ export const Step1IngestionView: React.FC<Step1IngestionViewProps> = ({
   household,
   onIngestUrls,
   onRemoveProperty,
+  onUpdateProperty,
   onClearAllProperties,
   onResetDefaults,
   onUpdateBudget,
@@ -305,18 +307,68 @@ export const Step1IngestionView: React.FC<Step1IngestionViewProps> = ({
                       {property.area}, {property.postcode}
                     </p>
 
-                    <div className="flex items-baseline justify-between border-b border-slate-200 pb-3 mb-3">
-                      <span className="text-xs text-slate-600">Asking Price</span>
-                      <div className="text-right">
-                        <span className="text-lg font-bold font-mono text-slate-900 tabular-nums">
-                          {formatCurrency(property.askingPrice, market)}
-                        </span>
-                        {overPurchaseCap && (
-                          <span className="block text-[10px] font-bold text-rose-700">
-                            +{formatCurrency(purchaseCeilingDelta, market, true)} ceiling delta
+                    <div className="border-b border-slate-200 pb-3 mb-3 space-y-2">
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-xs text-slate-600">Asking Price</span>
+                        <div className="text-right">
+                          <span className={`font-bold font-mono tabular-nums ${property.agreedPrice ? 'text-sm text-slate-500 line-through' : 'text-lg text-slate-900'}`}>
+                            {formatCurrency(property.askingPrice, market)}
                           </span>
-                        )}
+                          {overPurchaseCap && (
+                            <span className="block text-[10px] font-bold text-rose-700">
+                              +{formatCurrency(purchaseCeilingDelta, market, true)} ceiling delta
+                            </span>
+                          )}
+                        </div>
                       </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <label
+                          htmlFor={`agreed-price-${property.id}`}
+                          className="text-xs text-slate-700 font-medium shrink-0"
+                        >
+                          Sale Agreed ({market === 'IE' ? '€' : '£'})
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            id={`agreed-price-${property.id}`}
+                            type="number"
+                            min={0}
+                            step={5000}
+                            placeholder={String(property.askingPrice)}
+                            value={property.agreedPrice ?? ''}
+                            onChange={(e) => {
+                              const raw = e.target.value.trim();
+                              if (raw === '') {
+                                onUpdateProperty(property.id, { agreedPrice: undefined });
+                                return;
+                              }
+                              const parsed = Number(raw);
+                              if (!Number.isNaN(parsed) && parsed >= 0) {
+                                onUpdateProperty(property.id, { agreedPrice: parsed });
+                              }
+                            }}
+                            className="w-28 rounded border border-slate-300 bg-slate-50 px-2 py-1 text-right text-xs font-mono font-semibold text-slate-900 focus:bg-white focus:border-slate-900 focus:outline-none"
+                          />
+                          {property.agreedPrice !== undefined && (
+                            <button
+                              type="button"
+                              onClick={() => onUpdateProperty(property.id, { agreedPrice: undefined })}
+                              className="text-slate-400 hover:text-rose-700 p-0.5"
+                              title="Clear agreed sale value and revert to asking price"
+                              aria-label={`Clear agreed sale value for ${property.name}`}
+                            >
+                              <span className="material-symbols-outlined text-[14px]">close</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {property.agreedPrice !== undefined && property.agreedPrice > 0 && property.agreedPrice !== property.askingPrice && (
+                        <div className="text-right text-[10px] font-mono font-semibold text-blue-700">
+                          {property.agreedPrice > property.askingPrice ? '+' : '-'}
+                          {formatCurrency(Math.abs(property.agreedPrice - property.askingPrice), market, true)} vs asking (active in model)
+                        </div>
+                      )}
                     </div>
 
                     {/* Specs Pill Array */}
