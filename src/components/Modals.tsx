@@ -3,14 +3,24 @@ import type {
   EvaluatedProperty,
   HouseholdProfile,
   MarketMode,
+  NonNegotiableRule,
   PortfolioEvaluation,
   PropertyCandidate,
 } from '../types/property.ts';
 import { formatCurrency } from '../engine/decisionEngine.ts';
+import {
+  runGeminiDecisionAudit,
+  type DecisionAttachment,
+  type GeminiDecisionAuditResult,
+} from '../engine/decisionApiClient.ts';
 
 interface PropertyModalProps {
   evaluated: EvaluatedProperty;
   market: MarketMode;
+  household: HouseholdProfile;
+  nonNegotiables: NonNegotiableRule[];
+  existingAudit?: GeminiDecisionAuditResult | null;
+  onAuditComplete?: (propertyId: string, audit: GeminiDecisionAuditResult) => void;
   onClose: () => void;
   onUpdateProperty: (id: string, patch: Partial<PropertyCandidate>) => void;
 }
@@ -18,6 +28,10 @@ interface PropertyModalProps {
 export const PropertyAuditModal: React.FC<PropertyModalProps> = ({
   evaluated,
   market,
+  household,
+  nonNegotiables,
+  existingAudit = null,
+  onAuditComplete,
   onClose,
   onUpdateProperty,
 }) => {
@@ -27,6 +41,61 @@ export const PropertyAuditModal: React.FC<PropertyModalProps> = ({
   const [heatingUpgradeCost, setHeatingUpgradeCost] = useState(property.heatingUpgradeCost);
   const [commuteMinutes, setCommuteMinutes] = useState(property.commuteMinutes);
   const [catchmentProbability, setCatchmentProbability] = useState(property.catchmentProbability);
+
+  const [listingNotes, setListingNotes] = useState('');
+  const [attachments, setAttachments] = useState<DecisionAttachment[]>([]);
+  const [auditResult, setAuditResult] = useState<GeminiDecisionAuditResult | null>(existingAudit);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
+  const [appliedPatchNotice, setAppliedPatchNotice] = useState<string | null>(null);
+
+  const handleAttachmentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []).slice(0, 3);
+    for (const file of files) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setAttachments((prev) => [
+            ...prev.slice(0, 2),
+            {
+              name: file.name,
+              mimeType: file.type || 'application/octet-stream',
+              dataBase64: reader.result as string,
+            },
+          ]);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRunGeminiAudit = async () => {
+    setAuditLoading(true);
+    setAuditError(null);
+    setAppliedPatchNotice(null);
+    try {
+      const result = await runGeminiDecisionAudit({
+        market,
+        property,
+        household,
+        nonNegotiables,
+        listingNotes,
+        attachments,
+      });
+      setAuditResult(result);
+      onAuditComplete?.(property.id, result);
+    } catch (err) {
+      setAuditError(err instanceof Error ? err.message : 'Unable to reach Gemini Decisions backend.');
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  const handleApplySuggested = () => {
+    if (!auditResult?.suggestedPatch) return;
+    onUpdateProperty(property.id, auditResult.suggestedPatch);
+    setAppliedPatchNotice('Applied high-confidence Gemini Decision-1 classifications to parcel.');
+  };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,6 +239,182 @@ export const PropertyAuditModal: React.FC<PropertyModalProps> = ({
                 />
               </label>
             </div>
+          </div>
+
+          {/* Gemini Decision-1 Multimodal Audit */}
+          <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded bg-slate-900 text-white font-mono text-[10px] font-semibold uppercase tracking-wider">
+                    gemini-decision-1
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-500">
+                    v1beta/decisions • 0 output tokens
+                  </span>
+                </div>
+                <h4 className="text-sm font-bold text-slate-900 mt-1">
+                  Calibrated Multimodal Decision Audit
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={handleRunGeminiAudit}
+                disabled={auditLoading}
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-semibold transition-colors shrink-0"
+              >
+                <span className="material-symbols-outlined text-[16px]">
+                  {auditLoading ? 'progress_activity' : 'verified_user'}
+                </span>
+                {auditLoading ? 'Evaluating...' : 'Run Decision-1 Audit'}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="block sm:col-span-2">
+                <span className="text-[11px] font-semibold text-slate-700 block mb-1">
+                  Listing Notes / Survey Findings (Optional evidence context)
+                </span>
+                <textarea
+                  rows={2}
+                  value={listingNotes}
+                  onChange={(e) => setListingNotes(e.target.value)}
+                  placeholder="Paste agent notes, floorplan orientation clues, or RICS/engineer survey findings..."
+                  className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800"
+                />
+              </label>
+
+              <label className="block sm:col-span-2">
+                <span className="text-[11px] font-semibold text-slate-700 block mb-1">
+                  Attach Floorplan / Photo / Survey PDF (up to 3 files)
+                </span>
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  multiple
+                  onChange={handleAttachmentChange}
+                  className="block w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border file:border-slate-300 file:text-xs file:font-semibold file:bg-white file:text-slate-700 hover:file:bg-slate-50"
+                />
+                {attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {attachments.map((att, idx) => (
+                      <span
+                        key={`${att.name}-${idx}`}
+                        className="px-2 py-0.5 rounded bg-white border border-slate-200 text-[11px] font-mono text-slate-700"
+                      >
+                        {att.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </label>
+            </div>
+
+            {auditError && (
+              <div className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+                <strong>Backend Audit Unavailable:</strong> {auditError}
+              </div>
+            )}
+
+            {auditResult && (
+              <div className="space-y-3 pt-2 border-t border-slate-200">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-600">
+                  <span>
+                    Evaluated via <strong className="text-slate-900">{auditResult.model}</strong>
+                    {typeof auditResult.latencyMs === 'number'
+                      ? ` in ${auditResult.latencyMs}ms`
+                      : ''}
+                  </span>
+                  {(auditResult.suggestedPatch.solarOrientation ||
+                    typeof auditResult.suggestedPatch.renovationIsCosmeticOnly === 'boolean') && (
+                    <button
+                      type="button"
+                      onClick={handleApplySuggested}
+                      className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 text-white font-sans text-[11px] font-semibold"
+                    >
+                      Apply High-Confidence Classifications
+                    </button>
+                  )}
+                </div>
+
+                {appliedPatchNotice && (
+                  <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-800">
+                    {appliedPatchNotice}
+                  </div>
+                )}
+
+                {auditResult.ruleDecisions.length > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 font-semibold">
+                      Calibrated Noul (Yes/No) Rule Probabilities
+                    </div>
+                    {auditResult.ruleDecisions.map((rd) => (
+                      <div
+                        key={rd.ruleId}
+                        className="flex items-center justify-between gap-2 bg-white border border-slate-200 rounded px-3 py-2 text-xs"
+                      >
+                        <span className="font-medium text-slate-800 truncate">{rd.ruleTitle}</span>
+                        <div className="flex items-center gap-2 shrink-0 font-mono text-[11px]">
+                          <span className="text-slate-600">
+                            P(yes)={(rd.probabilityYes * 100).toFixed(0)}%
+                          </span>
+                          <span className="text-slate-400">|</span>
+                          <span className="text-slate-600">
+                            conf={(rd.confidence * 100).toFixed(0)}%
+                          </span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded font-bold text-[10px] ${
+                              rd.status === 'PASS'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : rd.status === 'REVIEW'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-rose-100 text-rose-800'
+                            }`}
+                          >
+                            {rd.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {auditResult.rubricScores.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {auditResult.rubricScores.map((rs) => (
+                      <div
+                        key={rs.key}
+                        className="bg-white border border-slate-200 rounded px-3 py-2 text-xs"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium text-slate-800">{rs.label}</span>
+                          <span className="font-mono font-bold text-slate-900">
+                            {rs.expectedScore1to5.toFixed(1)}/5
+                          </span>
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-500 mt-0.5">
+                          Confidence {(rs.confidence * 100).toFixed(0)}%
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {auditResult.solarClassification && (
+                  <div className="bg-white border border-slate-200 rounded px-3 py-2 text-xs flex items-center justify-between">
+                    <span className="text-slate-700">
+                      Classified Solar Aspect:{' '}
+                      <strong className="text-slate-900">
+                        {auditResult.solarClassification.selected}
+                      </strong>
+                    </span>
+                    <span className="font-mono text-[11px] text-slate-500">
+                      conf={(auditResult.solarClassification.confidence * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between pt-4 border-t border-slate-200">

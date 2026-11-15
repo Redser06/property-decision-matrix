@@ -10,6 +10,7 @@ import type {
 } from './types/property.ts';
 import { getPreset } from './data/presets.ts';
 import { evaluatePortfolio, formatCurrency, parsePropertyUrls } from './engine/decisionEngine.ts';
+import type { GeminiDecisionAuditResult } from './engine/decisionApiClient.ts';
 import { TopNavBar } from './components/TopNavBar.tsx';
 import { ExportToolkitModal, HouseholdModal, PropertyAuditModal } from './components/Modals.tsx';
 import { Step1IngestionView } from './views/Step1IngestionView.tsx';
@@ -102,6 +103,7 @@ export function App(): React.ReactElement {
   const [toolkitMode, setToolkitMode] = useState<'dossier' | 'offer-letter' | 'sensitivity' | null>(
     null
   );
+  const [decisionAudits, setDecisionAudits] = useState<Record<string, GeminiDecisionAuditResult>>({});
 
   const { market, activeStep } = appState;
   const workspace = appState.workspaces[market];
@@ -469,6 +471,13 @@ export function App(): React.ReactElement {
         <PropertyAuditModal
           evaluated={inspectedEval}
           market={market}
+          household={workspace.household}
+          nonNegotiables={workspace.weights.nonNegotiables}
+          existingAudit={decisionAudits[inspectedEval.property.id] ?? null}
+          onAuditComplete={(propertyId, audit) => {
+            setDecisionAudits((prev) => ({ ...prev, [propertyId]: audit }));
+            showToast(`Completed Gemini Decision-1 audit for ${inspectedEval.property.code}.`);
+          }}
           onClose={() => setInspectedPropertyId(null)}
           onUpdateProperty={handleUpdateProperty}
         />
