@@ -18,8 +18,12 @@ interface Step1IngestionViewProps {
   evaluation: PortfolioEvaluation;
   budget: BudgetConfig;
   household: HouseholdProfile;
-  onIngestUrls: (rawUrls: string) => Promise<{ added: number; message: string }>;
+  onIngestUrls: (
+    rawUrls: string,
+    replaceExisting?: boolean
+  ) => Promise<{ added: number; message: string }>;
   onRemoveProperty: (id: string) => void;
+  onResetDefaults: () => void;
   onUpdateBudget: (patch: Partial<BudgetConfig>) => void;
   onInspectProperty: (id: string) => void;
   onEditHousehold: () => void;
@@ -37,6 +41,7 @@ export const Step1IngestionView: React.FC<Step1IngestionViewProps> = ({
   household,
   onIngestUrls,
   onRemoveProperty,
+  onResetDefaults,
   onUpdateBudget,
   onInspectProperty,
   onEditHousehold,
@@ -50,6 +55,7 @@ export const Step1IngestionView: React.FC<Step1IngestionViewProps> = ({
   );
   const [ingestFeedback, setIngestFeedback] = useState<string | null>(null);
   const [isIngesting, setIsIngesting] = useState(false);
+  const [replaceShortlist, setReplaceShortlist] = useState(false);
   const [purchaseInputStr, setPurchaseInputStr] = useState<string | null>(null);
   const [landedInputStr, setLandedInputStr] = useState<string | null>(null);
 
@@ -62,7 +68,7 @@ export const Step1IngestionView: React.FC<Step1IngestionViewProps> = ({
     setIsIngesting(true);
     setIngestFeedback('Fetching live listing details & photos via backend...');
     try {
-      const res = await onIngestUrls(urlInput);
+      const res = await onIngestUrls(urlInput, replaceShortlist);
       setIngestFeedback(res.message);
       if (res.added > 0) {
         setUrlInput('');
@@ -151,13 +157,30 @@ export const Step1IngestionView: React.FC<Step1IngestionViewProps> = ({
               Paste 2+ listing URLs (Daft.ie, MyHome.ie, Rightmove, Zoopla) separated by line breaks or commas for automated extraction.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-700 bg-white border border-slate-200 px-2.5 py-1 rounded cursor-pointer">
+              <input
+                type="checkbox"
+                checked={replaceShortlist}
+                onChange={(e) => setReplaceShortlist(e.target.checked)}
+                className="rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+              />
+              <span>Replace existing shortlist</span>
+            </label>
             <button
               type="button"
               onClick={handleLoadSampleBatch}
               className="text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded transition-colors"
             >
               + Load 2 Sample URLs
+            </button>
+            <button
+              type="button"
+              onClick={onResetDefaults}
+              className="text-[11px] font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-200 px-2.5 py-1 rounded transition-colors"
+              title="Reset properties and budget back to preset defaults"
+            >
+              Reset Defaults
             </button>
             <span className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded uppercase tracking-wider">
               {properties.length} Properties Staged
@@ -236,7 +259,7 @@ export const Step1IngestionView: React.FC<Step1IngestionViewProps> = ({
                         <span className="material-symbols-filled text-[12px]">check_circle</span>
                         Ready
                       </span>
-                      {properties.length > 2 && (
+                      {properties.length > 1 && (
                         <button
                           type="button"
                           onClick={() => onRemoveProperty(property.id)}

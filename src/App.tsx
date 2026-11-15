@@ -225,10 +225,13 @@ export function App(): React.ReactElement {
   };
 
   const handleIngestUrls = async (
-    rawUrls: string
+    rawUrls: string,
+    replaceExisting = false
   ): Promise<{ added: number; message: string }> => {
     const candidates = splitPropertyUrlInput(rawUrls);
-    const existingSet = new Set(workspace.properties.map((p) => p.sourceUrl));
+    const existingSet = replaceExisting
+      ? new Set<string>()
+      : new Set(workspace.properties.map((p) => p.sourceUrl));
     const uniqueUrls = candidates.filter((u) => {
       try {
         const normalized = new URL(u).toString();
@@ -245,28 +248,33 @@ export function App(): React.ReactElement {
       };
     }
 
+    const baseCount = replaceExisting ? 0 : workspace.properties.length;
+
     try {
       const liveParsed = await ingestPropertyUrlsViaBackend(
         uniqueUrls,
         market,
-        workspace.properties.length
+        baseCount
       );
       updateCurrentWorkspace((prev) => ({
         ...prev,
-        properties: [...prev.properties, ...liveParsed],
+        properties: replaceExisting ? liveParsed : [...prev.properties, ...liveParsed],
       }));
+      if (replaceExisting) {
+        setDecisionAudits({});
+      }
 
       const liveCount = liveParsed.filter((p) => p.ingestionSource === 'live_html').length;
       const groundedCount = liveParsed.filter((p) => p.ingestionSource === 'search_grounded').length;
-      const msg = `Ingested ${liveParsed.length} listing${liveParsed.length > 1 ? 's' : ''} (${liveCount} live HTML, ${groundedCount} search-grounded).`;
+      const msg = `${replaceExisting ? 'Replaced shortlist with' : 'Ingested'} ${liveParsed.length} listing${liveParsed.length > 1 ? 's' : ''} (${liveCount} live HTML, ${groundedCount} search-grounded).`;
       showToast(msg);
       return { added: liveParsed.length, message: msg };
     } catch {
       const fallback = parsePropertyUrls(
         rawUrls,
         market,
-        workspace.properties.length,
-        workspace.properties.map((p) => p.sourceUrl)
+        baseCount,
+        replaceExisting ? [] : workspace.properties.map((p) => p.sourceUrl)
       );
       if (fallback.length === 0) {
         return {
@@ -276,9 +284,12 @@ export function App(): React.ReactElement {
       }
       updateCurrentWorkspace((prev) => ({
         ...prev,
-        properties: [...prev.properties, ...fallback],
+        properties: replaceExisting ? fallback : [...prev.properties, ...fallback],
       }));
-      const msg = `Backend unreachable — parsed ${fallback.length} listing(s) via offline URL fallback.`;
+      if (replaceExisting) {
+        setDecisionAudits({});
+      }
+      const msg = `Backend unreachable — ${replaceExisting ? 'replaced shortlist with' : 'parsed'} ${fallback.length} listing(s) via offline URL fallback.`;
       showToast(msg);
       return { added: fallback.length, message: msg };
     }
@@ -448,6 +459,7 @@ export function App(): React.ReactElement {
             household={workspace.household}
             onIngestUrls={handleIngestUrls}
             onRemoveProperty={handleRemoveProperty}
+            onResetDefaults={handleResetDefaults}
             onUpdateBudget={handleUpdateBudget}
             onInspectProperty={(id) => setInspectedPropertyId(id)}
             onEditHousehold={() => setIsHouseholdModalOpen(true)}
