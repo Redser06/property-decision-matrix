@@ -60,6 +60,13 @@
         }
       },
       {
+        "source": "/api/ingest-urls",
+        "function": {
+          "functionId": "ingestPropertyUrls",
+          "region": "europe-west2"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

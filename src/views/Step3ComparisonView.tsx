@@ -10,6 +10,7 @@ import type {
 } from '../types/property.ts';
 import { formatCurrency } from '../engine/decisionEngine.ts';
 import { PropertyMapPanel } from '../components/PropertyMapPanel.tsx';
+import { PropertyPhoto } from '../components/PropertyPhoto.tsx';
 
 interface Step3ComparisonViewProps {
   market: MarketMode;
@@ -182,9 +183,11 @@ export const Step3ComparisonView: React.FC<Step3ComparisonViewProps> = ({
             >
               {/* Photo + Overlays */}
               <div className="relative h-48 bg-slate-100 overflow-hidden">
-                <img
-                  src={property.imageUrl}
+                <PropertyPhoto
+                  imageUrl={property.imageUrl}
                   alt={property.name}
+                  portal={property.sourcePortal}
+                  postcode={property.postcode}
                   className="w-full h-full object-cover"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-slate-950/15 to-transparent" />

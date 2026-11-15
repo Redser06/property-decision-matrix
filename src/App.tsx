@@ -9,8 +9,16 @@ import type {
   StepId,
 } from './types/property.ts';
 import { getPreset } from './data/presets.ts';
-import { evaluatePortfolio, formatCurrency, parsePropertyUrls } from './engine/decisionEngine.ts';
-import type { GeminiDecisionAuditResult } from './engine/decisionApiClient.ts';
+import {
+  evaluatePortfolio,
+  formatCurrency,
+  parsePropertyUrls,
+  splitPropertyUrlInput,
+} from './engine/decisionEngine.ts';
+import {
+  ingestPropertyUrlsViaBackend,
+  type GeminiDecisionAuditResult,
+} from './engine/decisionApiClient.ts';
 import { TopNavBar } from './components/TopNavBar.tsx';
 import { ExportToolkitModal, HouseholdModal, PropertyAuditModal } from './components/Modals.tsx';
 import { Step1IngestionView } from './views/Step1IngestionView.tsx';
@@ -216,29 +224,64 @@ export function App(): React.ReactElement {
     );
   };
 
-  const handleIngestUrls = (rawUrls: string): { added: number; message: string } => {
-    const existingUrls = workspace.properties.map((p) => p.sourceUrl);
-    const parsed = parsePropertyUrls(
-      rawUrls,
-      market,
-      workspace.properties.length,
-      existingUrls
-    );
-    if (parsed.length === 0) {
+  const handleIngestUrls = async (
+    rawUrls: string
+  ): Promise<{ added: number; message: string }> => {
+    const candidates = splitPropertyUrlInput(rawUrls);
+    const existingSet = new Set(workspace.properties.map((p) => p.sourceUrl));
+    const uniqueUrls = candidates.filter((u) => {
+      try {
+        const normalized = new URL(u).toString();
+        return !existingSet.has(normalized);
+      } catch {
+        return false;
+      }
+    });
+
+    if (uniqueUrls.length === 0) {
       return {
         added: 0,
         message: 'No new valid URLs found (empty input or duplicates already in shortlist).',
       };
     }
-    updateCurrentWorkspace((prev) => ({
-      ...prev,
-      properties: [...prev.properties, ...parsed],
-    }));
-    const msg = `Parsed & added ${parsed.length} candidate listing${parsed.length > 1 ? 's' : ''} (${parsed
-      .map((p) => p.code)
-      .join(', ')}).`;
-    showToast(msg);
-    return { added: parsed.length, message: msg };
+
+    try {
+      const liveParsed = await ingestPropertyUrlsViaBackend(
+        uniqueUrls,
+        market,
+        workspace.properties.length
+      );
+      updateCurrentWorkspace((prev) => ({
+        ...prev,
+        properties: [...prev.properties, ...liveParsed],
+      }));
+
+      const liveCount = liveParsed.filter((p) => p.ingestionSource === 'live_html').length;
+      const groundedCount = liveParsed.filter((p) => p.ingestionSource === 'search_grounded').length;
+      const msg = `Ingested ${liveParsed.length} listing${liveParsed.length > 1 ? 's' : ''} (${liveCount} live HTML, ${groundedCount} search-grounded).`;
+      showToast(msg);
+      return { added: liveParsed.length, message: msg };
+    } catch {
+      const fallback = parsePropertyUrls(
+        rawUrls,
+        market,
+        workspace.properties.length,
+        workspace.properties.map((p) => p.sourceUrl)
+      );
+      if (fallback.length === 0) {
+        return {
+          added: 0,
+          message: 'Unable to parse URLs.',
+        };
+      }
+      updateCurrentWorkspace((prev) => ({
+        ...prev,
+        properties: [...prev.properties, ...fallback],
+      }));
+      const msg = `Backend unreachable — parsed ${fallback.length} listing(s) via offline URL fallback.`;
+      showToast(msg);
+      return { added: fallback.length, message: msg };
+    }
   };
 
   const handleRemoveProperty = (id: string) => {

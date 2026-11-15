@@ -8,6 +8,7 @@ import type {
   PropertyCandidate,
 } from '../types/property.ts';
 import { calculateStampDuty, formatCurrency } from '../engine/decisionEngine.ts';
+import { PropertyPhoto } from '../components/PropertyPhoto.tsx';
 
 interface Step1IngestionViewProps {
   market: MarketMode;
@@ -17,7 +18,7 @@ interface Step1IngestionViewProps {
   evaluation: PortfolioEvaluation;
   budget: BudgetConfig;
   household: HouseholdProfile;
-  onIngestUrls: (rawUrls: string) => { added: number; message: string };
+  onIngestUrls: (rawUrls: string) => Promise<{ added: number; message: string }>;
   onRemoveProperty: (id: string) => void;
   onUpdateBudget: (patch: Partial<BudgetConfig>) => void;
   onInspectProperty: (id: string) => void;
@@ -48,18 +49,26 @@ export const Step1IngestionView: React.FC<Step1IngestionViewProps> = ({
       : 'https://www.rightmove.co.uk/properties/145892019#/?channel=RES_BUY'
   );
   const [ingestFeedback, setIngestFeedback] = useState<string | null>(null);
+  const [isIngesting, setIsIngesting] = useState(false);
   const [purchaseInputStr, setPurchaseInputStr] = useState<string | null>(null);
   const [landedInputStr, setLandedInputStr] = useState<string | null>(null);
 
   const currencyCode = market === 'IE' ? 'EUR' : 'GBP';
   const currencySymbol = market === 'IE' ? '€' : '£';
 
-  const handleIngest = (e: React.FormEvent) => {
+  const handleIngest = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = onIngestUrls(urlInput);
-    setIngestFeedback(res.message);
-    if (res.added > 0) {
-      setUrlInput('');
+    if (isIngesting) return;
+    setIsIngesting(true);
+    setIngestFeedback('Fetching live listing details & photos via backend...');
+    try {
+      const res = await onIngestUrls(urlInput);
+      setIngestFeedback(res.message);
+      if (res.added > 0) {
+        setUrlInput('');
+      }
+    } finally {
+      setIsIngesting(false);
     }
   };
 
@@ -175,10 +184,13 @@ export const Step1IngestionView: React.FC<Step1IngestionViewProps> = ({
           </div>
           <button
             type="submit"
-            className="w-full sm:w-auto px-5 py-3 bg-slate-900 text-white text-[13px] font-semibold rounded hover:bg-slate-800 flex items-center justify-center gap-2 shrink-0 transition-colors"
+            disabled={isIngesting}
+            className="w-full sm:w-auto px-5 py-3 bg-slate-900 text-white text-[13px] font-semibold rounded hover:bg-slate-800 disabled:opacity-60 flex items-center justify-center gap-2 shrink-0 transition-colors"
           >
-            <span className="material-symbols-outlined text-[18px]">add_circle</span>
-            <span>Ingest Listing(s)</span>
+            <span className="material-symbols-outlined text-[18px]">
+              {isIngesting ? 'progress_activity' : 'add_circle'}
+            </span>
+            <span>{isIngesting ? 'Extracting...' : 'Ingest Listing(s)'}</span>
           </button>
         </form>
 
@@ -207,9 +219,11 @@ export const Step1IngestionView: React.FC<Step1IngestionViewProps> = ({
               >
                 <div>
                   <div className="relative h-48 w-full overflow-hidden bg-slate-100">
-                    <img
-                      src={property.imageUrl}
+                    <PropertyPhoto
+                      imageUrl={property.imageUrl}
                       alt={property.name}
+                      portal={property.sourcePortal}
+                      postcode={property.postcode}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">

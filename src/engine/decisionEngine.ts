@@ -13,15 +13,6 @@ import type {
 } from '../types/property.ts';
 import { IRISH_PRESET, LONDON_PRESET } from '../data/presets.ts';
 
-const LOCAL_IMAGES = [
-  '/images/prop-a.jpg',
-  '/images/prop-b.jpg',
-  '/images/prop-c.jpg',
-  '/images/prop-extra-1.jpg',
-  '/images/prop-extra-2.jpg',
-  '/images/prop-extra-3.jpg',
-];
-
 export function calculateStampDuty(price: number, market: MarketMode): number {
   if (price <= 0) return 0;
 
@@ -228,7 +219,8 @@ export function parsePropertyUrls(
       postcode,
       sourcePortal: portal,
       sourceUrl: normalized,
-      imageUrl: LOCAL_IMAGES[idx % LOCAL_IMAGES.length],
+      imageUrl: '',
+      ingestionSource: 'url_fallback',
       askingPrice,
       bedrooms,
       bathrooms,

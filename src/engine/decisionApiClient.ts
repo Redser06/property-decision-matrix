@@ -104,3 +104,35 @@ export async function runGeminiDecisionAudit(params: {
     latencyMs: payload.latencyMs,
   };
 }
+
+interface IngestSuccessResponse {
+  ok: true;
+  properties: PropertyCandidate[];
+}
+
+export async function ingestPropertyUrlsViaBackend(
+  urls: string[],
+  market: MarketMode,
+  existingCount: number
+): Promise<PropertyCandidate[]> {
+  const response = await fetch('/api/ingest-urls', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ urls, market, existingCount }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | IngestSuccessResponse
+    | ApiErrorResponse
+    | null;
+
+  if (!response.ok || !payload || !payload.ok || !Array.isArray(payload.properties)) {
+    const errMsg =
+      payload && 'error' in payload && payload.error
+        ? payload.error
+        : `Listing ingestion backend returned HTTP ${response.status}.`;
+    throw new Error(errMsg);
+  }
+
+  return payload.properties;
+}

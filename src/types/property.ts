@@ -20,6 +20,7 @@ export interface PropertyCandidate {
   sourcePortal: PortalSource;
   sourceUrl: string;
   imageUrl: string;
+  ingestionSource?: 'preset' | 'live_html' | 'search_grounded' | 'url_fallback';
   askingPrice: number;
   bedrooms: number;
   bathrooms: number;
