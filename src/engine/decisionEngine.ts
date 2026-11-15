@@ -499,7 +499,20 @@ export function evaluatePortfolio(
     }
   });
 
-  const winner = sorted[0];
+  const winner = sorted[0] ?? null;
+  if (!winner) {
+    return {
+      evaluated: [],
+      winner: null,
+      runnerUp: null,
+      varianceToRunnerUp: 0,
+      confidenceCoefficient: 0,
+      eigenvectorConsistency: 0,
+      sensitivityScore: 0,
+      comparisons: [],
+      qualifiedCount: 0,
+    };
+  }
   const runnerUp = sorted.length > 1 ? sorted[1] : null;
   const varianceToRunnerUp = runnerUp ? Number((winner.compositeScore - runnerUp.compositeScore).toFixed(1)) : 0;
 

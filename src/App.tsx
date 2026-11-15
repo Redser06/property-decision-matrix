@@ -87,11 +87,11 @@ function loadInitialState(): PersistedAppState {
       activeStep: validStep,
       workspaces: {
         IE:
-          parsed.workspaces?.IE && Array.isArray(parsed.workspaces.IE.properties) && parsed.workspaces.IE.properties.length > 0
+          parsed.workspaces?.IE && Array.isArray(parsed.workspaces.IE.properties)
             ? parsed.workspaces.IE
             : defaultState.workspaces.IE,
         UK:
-          parsed.workspaces?.UK && Array.isArray(parsed.workspaces.UK.properties) && parsed.workspaces.UK.properties.length > 0
+          parsed.workspaces?.UK && Array.isArray(parsed.workspaces.UK.properties)
             ? parsed.workspaces.UK
             : defaultState.workspaces.UK,
       },
@@ -296,10 +296,6 @@ export function App(): React.ReactElement {
   };
 
   const handleRemoveProperty = (id: string) => {
-    if (workspace.properties.length <= 1) {
-      showToast('Keep at least 1 property in the active shortlist.');
-      return;
-    }
     const removed = workspace.properties.find((p) => p.id === id);
     updateCurrentWorkspace((prev) => ({
       ...prev,
@@ -311,6 +307,16 @@ export function App(): React.ReactElement {
     if (removed) {
       showToast(`Removed ${removed.code} · ${removed.name} from shortlist.`);
     }
+  };
+
+  const handleClearAllProperties = () => {
+    updateCurrentWorkspace((prev) => ({
+      ...prev,
+      properties: [],
+    }));
+    setInspectedPropertyId(null);
+    setDecisionAudits({});
+    showToast('Cleared active property shortlist.');
   };
 
   const handleUpdateProperty = (id: string, patch: Partial<PropertyCandidate>) => {
@@ -407,11 +413,16 @@ export function App(): React.ReactElement {
   };
 
   const handleShareVerdict = () => {
+    const winner = evaluation.winner;
+    if (!winner) {
+      showToast('Add at least 1 property before sharing an executive verdict.');
+      return;
+    }
     const summaryText = [
       `NestVerdict Executive Summary (${workspace.household.portfolioTitle})`,
-      `Recommended Asset: ${evaluation.winner.property.code} · ${evaluation.winner.property.name}`,
-      `Composite Score: ${evaluation.winner.compositeScore.toFixed(1)}/100 (${workspace.weights.headPercent}% Head / ${100 - workspace.weights.headPercent}% Heart)`,
-      `Total Landed Cost: ${formatCurrency(evaluation.winner.totalLandedCost, market)} (Buffer: ${evaluation.winner.landedBuffer >= 0 ? '+' : '-'}${formatCurrency(Math.abs(evaluation.winner.landedBuffer), market)})`,
+      `Recommended Asset: ${winner.property.code} · ${winner.property.name}`,
+      `Composite Score: ${winner.compositeScore.toFixed(1)}/100 (${workspace.weights.headPercent}% Head / ${100 - workspace.weights.headPercent}% Heart)`,
+      `Total Landed Cost: ${formatCurrency(winner.totalLandedCost, market)} (Buffer: ${winner.landedBuffer >= 0 ? '+' : '-'}${formatCurrency(Math.abs(winner.landedBuffer), market)})`,
       `Active Candidates Evaluated: ${evaluation.evaluated.length}`,
     ].join('\n');
 
@@ -459,6 +470,7 @@ export function App(): React.ReactElement {
             household={workspace.household}
             onIngestUrls={handleIngestUrls}
             onRemoveProperty={handleRemoveProperty}
+            onClearAllProperties={handleClearAllProperties}
             onResetDefaults={handleResetDefaults}
             onUpdateBudget={handleUpdateBudget}
             onInspectProperty={(id) => setInspectedPropertyId(id)}
@@ -468,7 +480,29 @@ export function App(): React.ReactElement {
           />
         )}
 
-        {activeStep === 2 && (
+        {activeStep !== 1 && workspace.properties.length === 0 && (
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-16">
+            <div className="rounded-lg border border-slate-200 bg-white p-8 text-center shadow-sm">
+              <span className="material-symbols-outlined text-4xl text-slate-400">home_work</span>
+              <h2 className="mt-3 font-editorial text-2xl font-semibold text-slate-900">
+                Your shortlist is currently empty
+              </h2>
+              <p className="mt-2 text-sm text-slate-600 max-w-md mx-auto">
+                Add at least 2 property URLs from {presetMeta.label} portals to run the deterministic scorecard, side-by-side comparison, and executive verdict.
+              </p>
+              <button
+                type="button"
+                onClick={() => handleSelectStep(1)}
+                className="mt-5 inline-flex items-center gap-2 rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+                Go to Step 1 to add 2+ URLs
+              </button>
+            </div>
+          </div>
+        )}
+
+        {activeStep === 2 && workspace.properties.length > 0 && (
           <Step2CalibrationView
             key={`step2-${market}`}
             market={market}
@@ -485,7 +519,7 @@ export function App(): React.ReactElement {
           />
         )}
 
-        {activeStep === 3 && (
+        {activeStep === 3 && workspace.properties.length > 0 && (
           <Step3ComparisonView
             key={`step3-${market}`}
             market={market}
@@ -501,7 +535,7 @@ export function App(): React.ReactElement {
           />
         )}
 
-        {activeStep === 4 && (
+        {activeStep === 4 && workspace.properties.length > 0 && (
           <Step4VerdictView
             key={`step4-${market}`}
             market={market}

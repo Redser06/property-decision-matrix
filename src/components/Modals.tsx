@@ -599,6 +599,7 @@ export const ExportToolkitModal: React.FC<ExportModalProps> = ({
   const [copied, setCopied] = useState(false);
 
   const { winner } = evaluation;
+  if (!winner) return null;
   const currency = market === 'IE' ? '€' : '£';
   const suggestedBid = Math.round(winner.property.askingPrice * 0.982 / 5000) * 5000;
 

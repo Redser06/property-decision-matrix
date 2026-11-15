@@ -77,6 +77,7 @@ export const Step3ComparisonView: React.FC<Step3ComparisonViewProps> = ({
         : 'lg:grid-cols-3';
 
   const preferred = evaluation.winner;
+  if (!preferred) return null;
   const disqualifiedCount = evaluation.evaluated.filter((e) => e.isDisqualified).length;
 
   const adjustWorksCost = (item: EvaluatedProperty, delta: number) => {

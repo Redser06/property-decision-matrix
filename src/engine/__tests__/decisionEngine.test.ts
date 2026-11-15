@@ -47,6 +47,7 @@ test('evaluatePortfolio ranks Dartmouth Park Ave #1 and disqualifies Chepstow Vi
     LONDON_PRESET.household,
     'UK'
   );
+  assert.ok(res.winner);
   assert.equal(res.winner.property.id, 'uk-prop-c');
   assert.equal(res.winner.verdictRole, 'WINNER');
   assert.equal(res.winner.landedBuffer, 152_000);
@@ -65,6 +66,7 @@ test('evaluatePortfolio ranks Burnaby Park #1 on Irish preset and responds to bu
     IRISH_PRESET.household,
     'IE'
   );
+  assert.ok(baseline.winner);
   assert.equal(baseline.winner.property.id, 'ie-prop-c');
   assert.ok(baseline.winner.landedBuffer > 100_000);
 
@@ -95,6 +97,7 @@ test('evaluatePortfolio responds deterministically to Head vs Heart macro equili
     IRISH_PRESET.household,
     'IE'
   );
+  assert.ok(headHeavy.winner && heartHeavy.winner);
   assert.notEqual(headHeavy.winner.compositeScore, heartHeavy.winner.compositeScore);
 });
 
@@ -169,4 +172,13 @@ test('relaxing strict flag on custom non-negotiables and raising budget ceiling 
   );
   assert.equal(withRaisedCeiling.qualifiedCount, LONDON_PRESET.properties.length);
   assert.ok(withRaisedCeiling.evaluated.every((e) => !e.isDisqualified));
+});
+
+test('evaluatePortfolio returns empty evaluation when shortlist is empty', () => {
+  const empty = evaluatePortfolio([], LONDON_PRESET.budget, LONDON_PRESET.weights, LONDON_PRESET.household, 'UK');
+  assert.equal(empty.evaluated.length, 0);
+  assert.equal(empty.winner, null);
+  assert.equal(empty.runnerUp, null);
+  assert.equal(empty.qualifiedCount, 0);
+  assert.deepEqual(empty.comparisons, []);
 });

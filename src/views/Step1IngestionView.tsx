@@ -23,6 +23,7 @@ interface Step1IngestionViewProps {
     replaceExisting?: boolean
   ) => Promise<{ added: number; message: string }>;
   onRemoveProperty: (id: string) => void;
+  onClearAllProperties: () => void;
   onResetDefaults: () => void;
   onUpdateBudget: (patch: Partial<BudgetConfig>) => void;
   onInspectProperty: (id: string) => void;
@@ -41,6 +42,7 @@ export const Step1IngestionView: React.FC<Step1IngestionViewProps> = ({
   household,
   onIngestUrls,
   onRemoveProperty,
+  onClearAllProperties,
   onResetDefaults,
   onUpdateBudget,
   onInspectProperty,
@@ -174,6 +176,16 @@ export const Step1IngestionView: React.FC<Step1IngestionViewProps> = ({
             >
               + Load 2 Sample URLs
             </button>
+            {properties.length > 0 && (
+              <button
+                type="button"
+                onClick={onClearAllProperties}
+                className="text-[11px] font-semibold text-rose-700 hover:text-rose-900 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded transition-colors"
+                title="Remove all properties from the active shortlist"
+              >
+                Clear All
+              </button>
+            )}
             <button
               type="button"
               onClick={onResetDefaults}
@@ -231,6 +243,17 @@ export const Step1IngestionView: React.FC<Step1IngestionViewProps> = ({
         )}
 
         {/* Side-by-Side Ingested Property Cards */}
+        {evaluation.evaluated.length === 0 ? (
+          <div className="mt-4 rounded-md border border-dashed border-slate-300 bg-white p-8 text-center">
+            <span className="material-symbols-outlined text-3xl text-slate-400">add_home_work</span>
+            <h3 className="mt-2 text-base font-semibold text-slate-900">
+              No properties in active shortlist
+            </h3>
+            <p className="mt-1 text-xs text-slate-600 max-w-md mx-auto">
+              Paste 2+ listing URLs above and click <span className="font-semibold">Ingest &amp; Analyse URLs</span>, or click <span className="font-semibold">Reset Defaults</span> to reload the sample portfolio.
+            </p>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-4">
           {evaluation.evaluated.map((item) => {
             const { property, purchaseCeilingDelta, pricePerSqft } = item;
@@ -259,17 +282,15 @@ export const Step1IngestionView: React.FC<Step1IngestionViewProps> = ({
                         <span className="material-symbols-filled text-[12px]">check_circle</span>
                         Ready
                       </span>
-                      {properties.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => onRemoveProperty(property.id)}
-                          className="w-6 h-6 rounded bg-white/90 text-slate-700 hover:text-rose-700 flex items-center justify-center border border-slate-200"
-                          title={`Remove ${property.name}`}
-                          aria-label={`Remove ${property.name}`}
-                        >
-                          <span className="material-symbols-outlined text-[14px]">close</span>
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => onRemoveProperty(property.id)}
+                        className="w-6 h-6 rounded bg-white/90 text-slate-700 hover:text-rose-700 flex items-center justify-center border border-slate-200"
+                        title={`Remove ${property.name}`}
+                        aria-label={`Remove ${property.name}`}
+                      >
+                        <span className="material-symbols-outlined text-[14px]">close</span>
+                      </button>
                     </div>
                     <div className="absolute bottom-2.5 left-2.5 bg-white/95 backdrop-blur px-2.5 py-1 rounded text-slate-900 text-[11px] font-semibold border border-slate-200">
                       Ingested via {property.sourcePortal}
@@ -367,6 +388,7 @@ export const Step1IngestionView: React.FC<Step1IngestionViewProps> = ({
             );
           })}
         </div>
+        )}
       </section>
 
       {/* Dual-Budget Architecture Panel (8 Cols) & Household Profile (4 Cols) */}

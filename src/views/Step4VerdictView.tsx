@@ -48,6 +48,7 @@ export const Step4VerdictView: React.FC<Step4VerdictViewProps> = ({
   onBackToWeights,
 }) => {
   const { winner, runnerUp, varianceToRunnerUp, confidenceCoefficient } = evaluation;
+  if (!winner) return null;
   const completedCount = checklist.filter((c) => c.done).length;
   const readinessPct =
     checklist.length === 0 ? 100 : Math.round((completedCount / checklist.length) * 100);

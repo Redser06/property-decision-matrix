@@ -173,7 +173,7 @@ export interface TradeOffComparison {
 
 export interface PortfolioEvaluation {
   evaluated: EvaluatedProperty[];
-  winner: EvaluatedProperty;
+  winner: EvaluatedProperty | null;
   runnerUp: EvaluatedProperty | null;
   varianceToRunnerUp: number;
   confidenceCoefficient: number;
