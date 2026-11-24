@@ -91,3 +91,36 @@ npm run build
 # Deploy to Firebase Hosting Preview Channel
 npx firebase-tools hosting:channel:deploy property-decision-matrix-preview --project rapid-prototyping-4134c
 ```
+
+## Cloud Function authentication
+
+`ingestPropertyUrls` and `evaluatePropertyDecisions` require a Firebase Auth ID token (`Authorization: Bearer <idToken>`) and an allowlist. Both functions deny every caller when the allowlist is empty or unset. A verified token is allowed when its UID is in `ALLOWED_UIDS` or its verified email (`email_verified`) is in `ALLOWED_EMAILS`. Anyone else receives 403. Missing or invalid tokens receive 401.
+
+CORS is limited to `ALLOWED_ORIGINS` (comma-separated, no wildcard). `http://localhost` and `http://127.0.0.1` are added only while the Functions emulator is running (`FUNCTIONS_EMULATOR` or `FIREBASE_EMULATOR_HUB`).
+
+| Name | Where | Format |
+| --- | --- | --- |
+| `ALLOWED_UIDS` | Functions param / env | Comma-separated Firebase Auth UIDs |
+| `ALLOWED_EMAILS` | Functions param / env | Comma-separated verified emails |
+| `ALLOWED_ORIGINS` | Functions param / env | Comma-separated browser origins |
+| `VITE_FIREBASE_API_KEY` | Web build env | Firebase web app apiKey |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Web build env | Firebase authDomain |
+| `VITE_FIREBASE_PROJECT_ID` | Web build env | Firebase projectId |
+| `VITE_FIREBASE_APP_ID` | Web build env | Firebase appId |
+
+Do not commit param values, web config, emails, or UIDs. Copy `.env.example` for the Vite names and put function params in `functions/.env` (gitignored) or supply them when the CLI prompts.
+
+The web app uses Google sign-in and attaches the signed-in user's ID token on every call to these two functions. Enable the Google provider and authorize the app's origin in Firebase Authentication before signing in.
+
+Deploy only these functions after the params are set (not run by this change):
+
+```bash
+npx firebase-tools deploy --only functions:evaluatePropertyDecisions,functions:ingestPropertyUrls
+```
+
+Function checks:
+
+```bash
+npm --prefix functions test
+npm --prefix functions run build
+```

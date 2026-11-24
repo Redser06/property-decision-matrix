@@ -1,5 +1,6 @@
 import React from 'react';
 import type { MarketMode, StepId } from '../types/property.ts';
+import { AuthButton } from '../auth/AuthButton.tsx';
 
 interface TopNavBarProps {
   activeStep: StepId;
@@ -180,6 +181,8 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
             <span className="material-symbols-outlined text-[16px]">download</span>
             <span>Export Dossier</span>
           </button>
+
+          <AuthButton />
 
           <button
             type="button"
