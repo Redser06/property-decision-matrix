@@ -16,6 +16,7 @@ import {
   splitPropertyUrlInput,
 } from './engine/decisionEngine.ts';
 import {
+  BackendAuthError,
   ingestPropertyUrlsViaBackend,
   type GeminiDecisionAuditResult,
 } from './engine/decisionApiClient.ts';
@@ -269,7 +270,11 @@ export function App(): React.ReactElement {
       const msg = `${replaceExisting ? 'Replaced shortlist with' : 'Ingested'} ${liveParsed.length} listing${liveParsed.length > 1 ? 's' : ''} (${liveCount} live HTML, ${groundedCount} search-grounded).`;
       showToast(msg);
       return { added: liveParsed.length, message: msg };
-    } catch {
+    } catch (err) {
+      if (err instanceof BackendAuthError) {
+        showToast(err.message);
+        return { added: 0, message: err.message };
+      }
       const fallback = parsePropertyUrls(
         rawUrls,
         market,

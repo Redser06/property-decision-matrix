@@ -1,5 +1,7 @@
 import { onRequest } from 'firebase-functions/v2/https';
-import { defineSecret } from 'firebase-functions/params';
+import { defineSecret, defineString } from 'firebase-functions/params';
+import { initializeApp, getApps } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
 import { GoogleGenAI } from '@google/genai';
 import {
   buildDecisionRequestPayload,
@@ -7,128 +9,105 @@ import {
   type EvaluatePropertyDecisionInput,
 } from './decisionMapper.js';
 import { ingestSingleUrl } from './ingestMapper.js';
+import {
+  handleEvaluatePropertyDecisions,
+  handleIngestPropertyUrls,
+  isLocalDevRuntime,
+  type AccessConfig,
+  type HandlerDeps,
+} from './functionHttp.js';
 
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 
+/** Comma-separated Firebase Auth UIDs. Empty or unset denies every caller. */
+const allowedUids = defineString('ALLOWED_UIDS', {
+  default: '',
+  description:
+    'Comma-separated Firebase Auth UIDs allowed to call ingestPropertyUrls and evaluatePropertyDecisions. Empty denies all callers.',
+});
+
+/** Comma-separated verified emails. Empty or unset denies every caller unless ALLOWED_UIDS matches. */
+const allowedEmails = defineString('ALLOWED_EMAILS', {
+  default: '',
+  description:
+    'Comma-separated verified emails allowed to call the property functions. Ignored unless email_verified is true. Both allowlists empty denies all callers.',
+});
+
+/** Comma-separated browser origins. Does not accept a wildcard. */
+const allowedOrigins = defineString('ALLOWED_ORIGINS', {
+  default: '',
+  description:
+    'Comma-separated browser origins allowed to call the property functions. Localhost is added only in the Functions emulator.',
+});
+
+function readParam(param: { value: () => string }): string {
+  try {
+    return param.value() || '';
+  } catch {
+    return '';
+  }
+}
+
+function readAccessConfig(): AccessConfig {
+  return {
+    allowedUids: readParam(allowedUids),
+    allowedEmails: readParam(allowedEmails),
+    allowedOrigins: readParam(allowedOrigins),
+    allowLocalDevOrigins: isLocalDevRuntime(),
+    geminiApiKey: readParam(geminiApiKey) || process.env.GEMINI_API_KEY || '',
+  };
+}
+
+function ensureAdminApp(): void {
+  if (getApps().length === 0) {
+    initializeApp();
+  }
+}
+
+const deps: HandlerDeps = {
+  verifyIdToken: async (token) => {
+    ensureAdminApp();
+    const decoded = await getAuth().verifyIdToken(token);
+    return {
+      uid: decoded.uid,
+      email: decoded.email,
+      emailVerified: decoded.email_verified === true,
+    };
+  },
+  readAccessConfig,
+  ingestUrls: async (urls, market, existingCount, apiKey) => {
+    const ai = new GoogleGenAI({ apiVersion: 'v1beta', apiKey });
+    return Promise.all(urls.map((url, idx) => ingestSingleUrl(ai, url, market, existingCount + idx)));
+  },
+  evaluateDecision: async (input: EvaluatePropertyDecisionInput, apiKey) => {
+    const ai = new GoogleGenAI({ apiVersion: 'v1beta', apiKey });
+    const requestPayload = buildDecisionRequestPayload(input);
+    const response = await ai.decisions.create(requestPayload);
+    return mapDecisionResponse(response.answers, input);
+  },
+};
+
+const sharedOptions = {
+  region: 'europe-west2' as const,
+  // Open CORS is disabled. applyRequestCors reflects ALLOWED_ORIGINS only.
+  cors: false as const,
+  secrets: [geminiApiKey],
+};
+
 export const evaluatePropertyDecisions = onRequest(
   {
-    region: 'europe-west2',
-    cors: true,
-    secrets: [geminiApiKey],
+    ...sharedOptions,
     timeoutSeconds: 30,
     memory: '256MiB',
   },
-  async (req, res) => {
-    if (req.method !== 'POST') {
-      res.status(405).json({ ok: false, error: 'Method not allowed. Use POST.' });
-      return;
-    }
-
-    const body = req.body as Partial<EvaluatePropertyDecisionInput> | undefined;
-    if (!body || !body.property || !body.household || !Array.isArray(body.nonNegotiables)) {
-      res.status(400).json({
-        ok: false,
-        error: 'Invalid payload: property, household, and nonNegotiables[] are required.',
-      });
-      return;
-    }
-
-    const apiKey = geminiApiKey.value() || process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      res.status(503).json({
-        ok: false,
-        code: 'MISSING_GEMINI_API_KEY',
-        error: 'GEMINI_API_KEY secret is not configured on the Firebase Functions backend.',
-      });
-      return;
-    }
-
-    try {
-      const start = Date.now();
-      const ai = new GoogleGenAI({ apiVersion: 'v1beta', apiKey });
-      const decisionInput: EvaluatePropertyDecisionInput = {
-        market: body.market === 'UK' ? 'UK' : 'IE',
-        property: body.property,
-        household: body.household,
-        nonNegotiables: body.nonNegotiables,
-        listingNotes: body.listingNotes,
-        attachments: body.attachments,
-      };
-
-      const requestPayload = buildDecisionRequestPayload(decisionInput);
-      const response = await ai.decisions.create(requestPayload);
-      const audit = mapDecisionResponse(response.answers, decisionInput);
-
-      res.status(200).json({
-        ok: true,
-        latencyMs: Date.now() - start,
-        audit,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error calling Gemini Decisions API';
-      res.status(502).json({
-        ok: false,
-        error: message,
-      });
-    }
-  }
+  (req, res) => handleEvaluatePropertyDecisions(req, res, deps)
 );
 
 export const ingestPropertyUrls = onRequest(
   {
-    region: 'europe-west2',
-    cors: true,
-    secrets: [geminiApiKey],
+    ...sharedOptions,
     timeoutSeconds: 60,
     memory: '512MiB',
   },
-  async (req, res) => {
-    if (req.method !== 'POST') {
-      res.status(405).json({ ok: false, error: 'Method not allowed. Use POST.' });
-      return;
-    }
-
-    const body = req.body as {
-      urls?: string[];
-      market?: 'IE' | 'UK';
-      existingCount?: number;
-    } | undefined;
-
-    const urls = Array.isArray(body?.urls)
-      ? body.urls.map((u) => String(u).trim()).filter((u) => /^https?:\/\//i.test(u)).slice(0, 8)
-      : [];
-
-    if (urls.length === 0) {
-      res.status(400).json({ ok: false, error: 'Provide at least one valid http(s) URL in urls[].' });
-      return;
-    }
-
-    const apiKey = geminiApiKey.value() || process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      res.status(503).json({
-        ok: false,
-        code: 'MISSING_GEMINI_API_KEY',
-        error: 'GEMINI_API_KEY secret is not configured on the Firebase Functions backend.',
-      });
-      return;
-    }
-
-    try {
-      const market: 'IE' | 'UK' = body?.market === 'UK' ? 'UK' : 'IE';
-      const existingCount = typeof body?.existingCount === 'number' ? body.existingCount : 0;
-      const ai = new GoogleGenAI({ apiVersion: 'v1beta', apiKey });
-
-      const properties = await Promise.all(
-        urls.map((u, idx) => ingestSingleUrl(ai, u, market, existingCount + idx))
-      );
-
-      res.status(200).json({
-        ok: true,
-        properties,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to ingest property URLs';
-      res.status(502).json({ ok: false, error: message });
-    }
-  }
+  (req, res) => handleIngestPropertyUrls(req, res, deps)
 );
